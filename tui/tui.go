@@ -479,7 +479,7 @@ func (l *logTail) recent() []string {
 		if line == "" || strings.ContainsAny(line, "╔╗╚╝═") || strings.Contains(line, "Consider sponsoring") {
 			continue
 		}
-		clean = append(clean, truncate(line, 85))
+		clean = append(clean, formatActivity(line))
 	}
 	if len(clean) > 5 {
 		clean = clean[len(clean)-5:]
@@ -586,8 +586,18 @@ func drawProgress(s settings, started time.Time, records int, logs []string, fin
 	if len(logs) == 0 {
 		b.WriteString(dim + "  Waiting for scraper output…" + reset + "\r\n")
 	}
+	columns, _, sizeErr := term.GetSize(int(os.Stdout.Fd()))
+	if sizeErr != nil || columns < 40 {
+		columns = 80
+	}
 	for _, entry := range logs {
-		b.WriteString("  " + dim + "· " + reset + entry + "\r\n")
+		for i, line := range wrapActivity(entry, columns-8) {
+			prefix := "    "
+			if i == 0 {
+				prefix = "  · "
+			}
+			b.WriteString(dim + prefix + reset + line + "\r\n")
+		}
 	}
 	b.WriteString("\r\n")
 	if finished {
