@@ -32,6 +32,7 @@ const (
 	RunModeWeb
 	RunModeAwsLambda
 	RunModeAwsLambdaInvoker
+	RunModeTUI
 )
 
 var (
@@ -57,6 +58,7 @@ type Config struct {
 	InputFile                string
 	ResultsFile              string
 	JSON                     bool
+	TUI                      bool
 	LangCode                 string
 	Debug                    bool
 	Dsn                      string
@@ -120,6 +122,7 @@ func ParseConfig() *Config {
 	flag.StringVar(&cfg.InputFile, "input", "", "path to the input file with queries (one per line) [default: empty]")
 	flag.StringVar(&cfg.LangCode, "lang", "en", "language code for Google (e.g., 'de' for German) [default: en]")
 	flag.BoolVar(&cfg.Debug, "debug", false, "enable headful crawl (opens browser window) [default: false]")
+	flag.BoolVar(&cfg.TUI, "tui", false, "launch the interactive terminal interface")
 	flag.StringVar(&cfg.Dsn, "dsn", "", "database connection string [only valid with database provider]")
 	flag.BoolVar(&cfg.ProduceOnly, "produce", false, "produce seed jobs only (requires dsn)")
 	flag.DurationVar(&cfg.ExitOnInactivityDuration, "exit-on-inactivity", 0, "exit after inactivity duration (e.g., '5m')")
@@ -235,6 +238,8 @@ func ParseConfig() *Config {
 	}
 
 	switch {
+	case cfg.TUI:
+		cfg.RunMode = RunModeTUI
 	case cfg.AwsLambdaInvoker:
 		cfg.RunMode = RunModeAwsLambdaInvoker
 	case cfg.AwsLamdbaRunner:
