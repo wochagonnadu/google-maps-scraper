@@ -13,7 +13,8 @@ type fieldGuide struct {
 }
 
 var fieldGuides = [...]fieldGuide{
-	{"e.g. კოსმეტოლოგი თბილისი", "Type a business category and place, e.g. კოსმეტოლოგი თბილისი"},
+	{"Paste multiple lines or enter list", "Enter opens the keyword editor; Ctrl+V/Cmd+V pastes the entire list"},
+	{"Single query / Keyword list", "Space switches between one search and a list of searches"},
 	{"Browser: details / Fast: quick", "Browser collects richer details; Fast requires coordinates and skips emails"},
 	{"Tbilisi: 41.7151,44.8271", "Use latitude,longitude. Optional in Browser mode, required in Fast mode"},
 	{"ka / en / ru", "Two-letter result language: ka=Georgian, en=English, ru=Russian"},
@@ -104,7 +105,11 @@ func renderForm(s settings, selected int, editing bool, editValue, message strin
 		} else {
 			row.WriteString(dim)
 		}
-		row.WriteString(fmt.Sprintf("%-*s", labelWidth, fieldLabels[i]))
+		label := fieldLabels[i]
+		if i == fieldQuery && s.listMode {
+			label = "Keywords"
+		}
+		row.WriteString(fmt.Sprintf("%-*s", labelWidth, label))
 		row.WriteString(reset + "  " + content)
 		if sidebar {
 			row.WriteString(strings.Repeat(" ", max(0, valueWidth-runewidth.StringWidth(content))))
