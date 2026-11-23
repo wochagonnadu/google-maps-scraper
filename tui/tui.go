@@ -2,7 +2,6 @@
 package tui
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -285,61 +284,7 @@ func (s settings) args(queryFile string) []string {
 type keyEvent struct {
 	action string
 	char   rune
-}
-
-func readKeys(keys chan<- keyEvent) {
-	r := bufio.NewReader(os.Stdin)
-	for {
-		ch, _, err := r.ReadRune()
-		if err != nil {
-			close(keys)
-			return
-		}
-		var evt keyEvent
-		switch ch {
-		case 3:
-			evt.action = "interrupt"
-		case 13, 10:
-			evt.action = "enter"
-		case 9:
-			evt.action = "tab"
-		case 127, 8:
-			evt.action = "backspace"
-		case 21:
-			evt.action = "clear"
-		case 27:
-			next, _, err := r.ReadRune()
-			if err != nil {
-				continue
-			}
-			if next != '[' {
-				evt.action = "escape"
-				break
-			}
-			direction, _, err := r.ReadRune()
-			if err != nil {
-				continue
-			}
-			switch direction {
-			case 'A':
-				evt.action = "up"
-			case 'B':
-				evt.action = "down"
-			case 'C':
-				evt.action = "right"
-			case 'D':
-				evt.action = "left"
-			}
-		default:
-			if unicode.IsPrint(ch) {
-				evt.action = "char"
-				evt.char = ch
-			}
-		}
-		if evt.action != "" {
-			keys <- evt
-		}
-	}
+	text   string
 }
 
 // Run starts the optional interactive user interface.
@@ -352,10 +297,10 @@ func (r *Runner) Run(ctx context.Context) error {
 		return fmt.Errorf("enable terminal input: %w", err)
 	}
 	defer func() {
-		fmt.Fprint(os.Stdout, "\x1b[?25h\x1b[?1049l")
+		fmt.Fprint(os.Stdout, "\x1b[?2004l\x1b[?25h\x1b[?1049l")
 		_ = term.Restore(int(os.Stdin.Fd()), oldState)
 	}()
-	fmt.Fprint(os.Stdout, "\x1b[?1049h\x1b[?25l")
+	fmt.Fprint(os.Stdout, "\x1b[?1049h\x1b[?2004h\x1b[?25l")
 	keys := make(chan keyEvent, 32)
 	go readKeys(keys)
 	s := newSettings(r.cfg)
@@ -414,6 +359,16 @@ func editForm(ctx context.Context, keys <-chan keyEvent, s *settings) (bool, err
 					}
 				case "clear":
 					editValue = ""
+				case "paste", "pasteClipboard":
+					pasted, err := resolvePaste(ctx, evt)
+					if err != nil {
+						message = err.Error()
+					} else if pasted != "" {
+						editValue += pasted
+						message = ""
+					}
+				case "pasteTooLong":
+					message = "Pasted text exceeds the 32 KiB limit"
 				case "char":
 					editValue += string(evt.char)
 				}
@@ -422,8 +377,25 @@ func editForm(ctx context.Context, keys <-chan keyEvent, s *settings) (bool, err
 			switch evt.action {
 			case "up":
 				selected = (selected + fieldCount - 1) % fieldCount
+				message = ""
 			case "down", "tab":
 				selected = (selected + 1) % fieldCount
+				message = ""
+			case "paste", "pasteClipboard":
+				if !isTextField(selected) {
+					message = "Select a text field before pasting"
+					continue
+				}
+				pasted, err := resolvePaste(ctx, evt)
+				if err != nil {
+					message = err.Error()
+				} else if pasted != "" {
+					editing = true
+					editValue = pasted
+					message = ""
+				}
+			case "pasteTooLong":
+				message = "Pasted text exceeds the 32 KiB limit"
 			case "char":
 				if evt.char == 'q' {
 					return false, errExit
@@ -445,6 +417,10 @@ func editForm(ctx context.Context, keys <-chan keyEvent, s *settings) (bool, err
 				case isTextField(selected) && evt.action == "enter":
 					editing = true
 					editValue = s.display(selected)
+					if selected == fieldGeo {
+						// Do not turn the placeholder text into saved coordinates.
+						editValue = s.geo
+					}
 					message = ""
 				default:
 					s.toggle(selected)
@@ -456,39 +432,11 @@ func editForm(ctx context.Context, keys <-chan keyEvent, s *settings) (bool, err
 }
 
 func drawForm(s settings, selected int, editing bool, value, message string) {
-	var b strings.Builder
-	b.WriteString("\x1b[H\x1b[2J")
-	b.WriteString(accent + bold + "  ◆ MAPS SCOUT" + reset + dim + "  /  Interactive terminal" + reset + "\r\n")
-	b.WriteString(dim + "  ───────────────────────────────────────────────────────────────" + reset + "\r\n\r\n")
-	b.WriteString("  Configure your search (↑↓ or Tab to navigate, Enter to edit)\r\n\r\n")
-	for i := 0; i < fieldCount; i++ {
-		cursor := "  "
-		if selected == i {
-			cursor = accent + "› " + reset
-		}
-		txt := s.display(i)
-		if editing && selected == i {
-			txt = value + "▌"
-		}
-		if txt == "" {
-			txt = "(empty)"
-		}
-		txt = truncate(txt, 72)
-		if selected == i {
-			b.WriteString(fmt.Sprintf("%s%s%-17s%s  %s\r\n", cursor, bold, fieldLabels[i], reset, txt))
-		} else {
-			b.WriteString(fmt.Sprintf("%s%s%-17s%s  %s\r\n", cursor, dim, fieldLabels[i], reset, txt))
-		}
+	columns, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || columns < 40 {
+		columns = 80
 	}
-	b.WriteString("\r\n")
-	if message != "" {
-		b.WriteString(red + "  ! " + truncate(message, 85) + reset + "\r\n")
-	} else if editing {
-		b.WriteString(dim + "  Type to edit · Enter saves · Ctrl+U clears" + reset + "\r\n")
-	} else {
-		b.WriteString(dim + "  Space toggles options · q quits · Ctrl+C exits" + reset + "\r\n")
-	}
-	fmt.Fprint(os.Stdout, b.String())
+	fmt.Fprint(os.Stdout, renderForm(s, selected, editing, value, message, columns))
 }
 
 func truncate(s string, maxRunes int) string {
@@ -531,7 +479,7 @@ func (l *logTail) recent() []string {
 		if line == "" || strings.ContainsAny(line, "╔╗╚╝═") || strings.Contains(line, "Consider sponsoring") {
 			continue
 		}
-		clean = append(clean, truncate(line, 85))
+		clean = append(clean, formatActivity(line))
 	}
 	if len(clean) > 5 {
 		clean = clean[len(clean)-5:]
@@ -638,8 +586,18 @@ func drawProgress(s settings, started time.Time, records int, logs []string, fin
 	if len(logs) == 0 {
 		b.WriteString(dim + "  Waiting for scraper output…" + reset + "\r\n")
 	}
+	columns, _, sizeErr := term.GetSize(int(os.Stdout.Fd()))
+	if sizeErr != nil || columns < 40 {
+		columns = 80
+	}
 	for _, entry := range logs {
-		b.WriteString("  " + dim + "· " + reset + entry + "\r\n")
+		for i, line := range wrapActivity(entry, columns-8) {
+			prefix := "    "
+			if i == 0 {
+				prefix = "  · "
+			}
+			b.WriteString(dim + prefix + reset + line + "\r\n")
+		}
 	}
 	b.WriteString("\r\n")
 	if finished {
