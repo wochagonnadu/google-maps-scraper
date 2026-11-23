@@ -15,6 +15,7 @@ import (
 	"github.com/gosom/google-maps-scraper/runner/installplaywright"
 	"github.com/gosom/google-maps-scraper/runner/lambdaaws"
 	"github.com/gosom/google-maps-scraper/runner/webrunner"
+	"github.com/gosom/google-maps-scraper/tui"
 )
 
 func main() {
@@ -68,6 +69,8 @@ func runnerFactory(cfg *runner.Config) (runner.Runner, error) {
 	switch cfg.RunMode {
 	case runner.RunModeFile:
 		return filerunner.New(cfg)
+	case runner.RunModeTUI:
+		return tui.New(cfg), nil
 	case runner.RunModeDatabase, runner.RunModeDatabaseProduce:
 		return databaserunner.New(cfg)
 	case runner.RunModeInstallPlaywright:
