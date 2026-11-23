@@ -32,6 +32,7 @@ const (
 
 const (
 	fieldQuery = iota
+	fieldSource
 	fieldMode
 	fieldGeo
 	fieldLanguage
@@ -46,7 +47,7 @@ const (
 )
 
 var fieldLabels = [...]string{
-	"Search query", "Mode", "Coordinates", "Language",
+	"Search query", "Input type", "Mode", "Coordinates", "Language",
 	"Depth", "Workers", "Extract emails", "Export",
 	"Output file", "Start scraping", "Quit",
 }
@@ -66,6 +67,8 @@ func (r *Runner) Close(context.Context) error { return nil }
 
 type settings struct {
 	query    string
+	keywords string
+	listMode bool
 	fast     bool
 	geo      string
 	language string
@@ -91,6 +94,7 @@ func newSettings(cfg *runner.Config) settings {
 	}
 	return settings{
 		query:    "",
+		listMode: true,
 		fast:     cfg.FastMode,
 		geo:      cfg.GeoCoordinates,
 		language: lang,
@@ -112,7 +116,15 @@ func defaultOutput(jsonl bool) string {
 func (s *settings) display(i int) string {
 	switch i {
 	case fieldQuery:
+		if s.listMode {
+			return keywordListSummary(*s)
+		}
 		return s.query
+	case fieldSource:
+		if s.listMode {
+			return "Keyword list  [Space to switch]"
+		}
+		return "Single query  [Space to switch]"
 	case fieldMode:
 		if s.fast {
 			return "Fast (HTTP)  [Space to switch]"
@@ -172,6 +184,8 @@ func (s *settings) setText(i int, v string) {
 
 func (s *settings) toggle(i int) {
 	switch i {
+	case fieldSource:
+		s.listMode = !s.listMode
 	case fieldMode:
 		s.fast = !s.fast
 		if s.fast {
@@ -200,11 +214,17 @@ func isTextField(i int) bool {
 }
 
 func (s settings) validate() error {
-	if s.query == "" {
-		return errors.New("enter a search query")
-	}
-	if strings.ContainsAny(s.query, "\r\n") {
-		return errors.New("query must be on one line")
+	if s.listMode {
+		if err := validateQueryList(s); err != nil {
+			return err
+		}
+	} else {
+		if strings.TrimSpace(s.query) == "" {
+			return errors.New("enter a search query")
+		}
+		if strings.ContainsAny(s.query, "\r\n") {
+			return errors.New("query must be on one line")
+		}
 	}
 	if s.fast && s.geo == "" {
 		return errors.New("Fast mode requires coordinates (latitude,longitude)")
@@ -382,6 +402,16 @@ func editForm(ctx context.Context, keys <-chan keyEvent, s *settings) (bool, err
 				selected = (selected + 1) % fieldCount
 				message = ""
 			case "paste", "pasteClipboard":
+				if selected == fieldQuery && s.listMode {
+					pasted, pasteErr := resolveKeywordPaste(ctx, evt)
+					if pasteErr != nil {
+						message = pasteErr.Error()
+					} else if pasted != "" {
+						s.keywords = pasted
+						message = fmt.Sprintf("%d keywords pasted", len(s.queries()))
+					}
+					continue
+				}
 				if !isTextField(selected) {
 					message = "Select a text field before pasting"
 					continue
@@ -414,6 +444,15 @@ func editForm(ctx context.Context, keys <-chan keyEvent, s *settings) (bool, err
 						continue
 					}
 					return true, nil
+				case selected == fieldQuery && s.listMode && evt.action == "enter":
+					value, saved, editErr := editKeywords(ctx, keys, s.keywords)
+					if editErr != nil {
+						return false, editErr
+					}
+					if saved {
+						s.keywords = value
+						message = fmt.Sprintf("Saved %d unique keywords", len(s.queries()))
+					}
 				case isTextField(selected) && evt.action == "enter":
 					editing = true
 					editValue = s.display(selected)
@@ -493,7 +532,7 @@ func runScrape(ctx context.Context, keys <-chan keyEvent, s settings) error {
 		return fmt.Errorf("create query file: %w", err)
 	}
 	defer os.Remove(temp.Name())
-	if _, err := fmt.Fprintln(temp, s.query); err != nil {
+	if _, err := fmt.Fprintln(temp, s.queryText()); err != nil {
 		_ = temp.Close()
 		return err
 	}
@@ -578,7 +617,11 @@ func drawProgress(s settings, started time.Time, records int, logs []string, fin
 		state = green + "✓ COMPLETED" + reset
 	}
 	b.WriteString("  Status:       " + state + "\r\n")
-	b.WriteString("  Query:        " + truncate(s.query, 70) + "\r\n")
+	if s.listMode {
+		b.WriteString(fmt.Sprintf("  Queries:      %d keywords\r\n", len(s.queries())))
+	} else {
+		b.WriteString("  Query:        " + truncate(s.query, 70) + "\r\n")
+	}
 	b.WriteString(fmt.Sprintf("  Results:      %d records\r\n", records))
 	b.WriteString("  Elapsed:      " + time.Since(started).Truncate(time.Second).String() + "\r\n")
 	b.WriteString("  Export:       " + truncate(s.output, 70) + "\r\n")

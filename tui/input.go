@@ -55,6 +55,10 @@ func nextKey(reader *bufio.Reader) (keyEvent, error) {
 		return keyEvent{action: "backspace"}, nil
 	case 21:
 		return keyEvent{action: "clear"}, nil
+	case 19:
+		return keyEvent{action: "save"}, nil
+	case 7:
+		return keyEvent{action: "cancel"}, nil
 	case 22:
 		return keyEvent{action: "pasteClipboard"}, nil
 	case 27:
@@ -168,6 +172,16 @@ func sanitizePaste(raw string) string {
 // readSystemClipboard supports the explicit Ctrl+V shortcut. Command+V in
 // standard macOS terminal emulators is handled by bracketed-paste input.
 func readSystemClipboard(ctx context.Context) (string, error) {
+	raw, err := readSystemClipboardText(ctx)
+	if err != nil {
+		return "", err
+	}
+	return sanitizePaste(raw), nil
+}
+
+// readSystemClipboardText returns raw UTF-8 text. The multiline keyword editor
+// must preserve newlines instead of applying single-line normalization.
+func readSystemClipboardText(ctx context.Context) (string, error) {
 	var candidates [][]string
 	switch runtime.GOOS {
 	case "darwin":
@@ -197,7 +211,7 @@ func readSystemClipboard(ctx context.Context) (string, error) {
 		if len(output) > maxPasteBytes {
 			return "", errors.New("clipboard text is too long (limit: 32 KiB)")
 		}
-		return sanitizePaste(string(output)), nil
+		return string(output), nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no clipboard utility available")
