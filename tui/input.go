@@ -204,3 +204,16 @@ func readSystemClipboard(ctx context.Context) (string, error) {
 	}
 	return "", fmt.Errorf("cannot read clipboard: %w (try terminal paste shortcut)", lastErr)
 }
+
+// resolvePaste maps terminal bracketed-paste payloads and Ctrl+V clipboard reads
+// to a single sanitized value for text fields.
+func resolvePaste(ctx context.Context, event keyEvent) (string, error) {
+	switch event.action {
+	case "paste":
+		return sanitizePaste(event.text), nil
+	case "pasteClipboard":
+		return readSystemClipboard(ctx)
+	default:
+		return "", nil
+	}
+}
