@@ -4,7 +4,6 @@ package tui
 import (
 	"bufio"
 	"context"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -100,8 +99,15 @@ func newSettings(cfg *runner.Config) settings {
 		workers:  strconv.Itoa(workers),
 		email:    cfg.Email,
 		jsonl:    cfg.JSON,
-		output:   "results.csv",
+		output:   defaultOutput(cfg.JSON),
 	}
+}
+
+func defaultOutput(jsonl bool) string {
+	if jsonl {
+		return "results.jsonl"
+	}
+	return "results.csv"
 }
 
 func (s *settings) display(i int) string {
@@ -365,6 +371,9 @@ func (r *Runner) Run(ctx context.Context) error {
 			return nil
 		}
 		if err := runScrape(ctx, keys, s); err != nil {
+			if errors.Is(err, errExit) {
+				return nil
+			}
 			return err
 		}
 	}
@@ -567,17 +576,20 @@ func runScrape(ctx context.Context, keys <-chan keyEvent, s settings) error {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	started := time.Now()
+	tracker := newRecordCounter(s.output, s.jsonl)
 	ticker := time.NewTicker(750 * time.Millisecond)
 	defer ticker.Stop()
 	finished := false
 	var runErr error
 	stopped := false
 	for {
-		drawProgress(s, started, countRecords(s.output, s.jsonl), logs.recent(), finished, stopped, runErr)
+		drawProgress(s, started, tracker.Count(), logs.recent(), finished, stopped, runErr)
 		select {
 		case <-ctx.Done():
-			cancel()
-			<-done
+			if !finished {
+				cancel()
+				<-done
+			}
 			return ctx.Err()
 		case err := <-done:
 			runErr = err
@@ -602,38 +614,6 @@ func runScrape(ctx context.Context, keys <-chan keyEvent, s settings) error {
 			}
 		}
 	}
-}
-
-func countRecords(path string, jsonl bool) int {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-	count := 0
-	if jsonl {
-		scanner := bufio.NewScanner(f)
-		scanner.Buffer(make([]byte, 4096), 16*1024*1024)
-		for scanner.Scan() {
-			if strings.TrimSpace(scanner.Text()) != "" {
-				count++
-			}
-		}
-		return count
-	}
-	reader := csv.NewReader(f)
-	reader.FieldsPerRecord = -1
-	// Skip the CSV header row.
-	if _, err := reader.Read(); err != nil {
-		return 0
-	}
-	for {
-		if _, err := reader.Read(); err != nil {
-			break
-		}
-		count++
-	}
-	return count
 }
 
 func drawProgress(s settings, started time.Time, records int, logs []string, finished, stopped bool, runErr error) {
