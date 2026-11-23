@@ -29,6 +29,36 @@ Text input supports Unicode queries, including Georgian and Cyrillic. Paste work
 
 A help column beside every setting explains what to enter and provides examples. In narrower terminal windows, help for the currently selected field appears underneath the form. For a quick test, use `კოსმეტოლოგი თბილისი`, `ka`, depth `2`, workers `2`, and `tbilisi_test.csv`.
 
+## Keyword lists
+
+**Keyword list** is the default search source. The first configuration field is
+**Keywords**; use **Enter** to open its multiline editor, and enter one Google
+Maps search per line:
+
+```text
+კოსმეტოლოგი თბილისი
+დერმატოლოგი თბილისი
+ლაზერული ეპილაცია თბილისი
+```
+
+- **Enter** in the list editor: start the next keyword on a new line
+- **Ctrl+V / Cmd+V**: paste multiple lines at once, including Georgian UTF-8
+- **Ctrl+S**: save the list and return to the configuration form
+- **Ctrl+G**: cancel the editor without changing the saved list
+- **Ctrl+U**: clear all text in the editor
+- **Space** on **Input type**: switch between the keyword list and a single
+  query without discarding either draft
+
+You can also paste a complete list directly while the **Keywords** field is
+selected, without opening the editor.
+
+The TUI ignores blank lines and repeated keywords (case-insensitive), preserving
+the order of the remaining searches. It displays the number of unique queries
+and writes them all into one temporary `-input` file, one query per line, using
+the scraper's existing multi-query functionality. All results go into the
+selected CSV or JSONL file. The current editor supports up to 1,000 keywords;
+clipboard pastes are limited to 32 KiB.
+
 ## Modes and output
 
 - **Browser mode** supports optional coordinates and email extraction.
