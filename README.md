@@ -80,6 +80,17 @@ Add `-email` to collect emails from business websites. For JSON Lines output (on
 
 **No Docker?** [Download a release binary](https://github.com/gosom/google-maps-scraper/releases/latest) and follow the [binary instructions](#installation). No Go installation is needed.
 
+### Interactive Terminal UI (experimental)
+
+The optional `-tui` mode provides keyboard navigation, a search form, live result counts, and CSV/JSONL export selection in your terminal:
+
+```sh
+./google-maps-scraper -tui
+```
+
+See [TUI instructions](docs/tui.md) for shortcuts, requirements, and limitations. Existing CLI and Web UI modes continue to work unchanged.
+
+
 ### Web UI
 
 With Docker installed:
