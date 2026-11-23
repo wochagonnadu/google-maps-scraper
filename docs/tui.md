@@ -41,7 +41,9 @@ A help column beside every setting explains what to enter and provides examples.
   Interrupted jobs may leave partial results in that file.
 
 The dashboard displays collected records, elapsed time, and recent log
-messages. Since Google Maps doesn't provide a known total number of matches,
+messages. Structured JSON logs are summarized as readable level/component/message
+entries; long log entries wrap instead of being truncated. PostHog analytics
+transport failures are labeled as telemetry issues, not scraping failures. Since Google Maps doesn't provide a known total number of matches,
 the TUI deliberately does **not** invent a percentage-complete indicator.
 Record counts update when the scraper flushes data to disk.
 
